@@ -1,0 +1,211 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      String   @default("STUDENT") // STUDENT, AGENT, ADMIN
+  phone     String?
+  studentId String?
+  avatar    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  supportAgent     SupportAgent?
+  createdTickets   SupportTicket[]       @relation("StudentTickets")
+  statusChanges    TicketStatusHistory[] @relation("UserStatusChanges")
+  conversations    Conversation[]
+  feedback         Feedback[]
+  notifications    NotificationRecord[]
+  auditLogs        AuditLog[]
+}
+
+model Department {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  code        String   @unique
+  description String
+  email       String?
+  createdAt   DateTime @default(now())
+
+  agents  SupportAgent[]
+  tickets SupportTicket[]
+}
+
+model SupportAgent {
+  id                String     @id @default(uuid())
+  userId            String     @unique
+  departmentId      String
+  isAvailable       Boolean    @default(true)
+  maxTickets        Int        @default(10)
+  activeTicketCount Int        @default(0)
+  createdAt         DateTime   @default(now())
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department  Department   @relation(fields: [departmentId], references: [id])
+  assignedTickets SupportTicket[] @relation("AgentTickets")
+  assignments TicketAssignment[]
+}
+
+model FAQ {
+  id                String   @id @default(uuid())
+  question          String
+  answer            String
+  category          String   // Admissions, Fees and Payments, Examinations, etc.
+  keywords          String   // Comma separated keywords
+  priority          Int      @default(0)
+  views             Int      @default(0)
+  helpfulCount      Int      @default(0)
+  unhelpfulCount    Int      @default(0)
+  isPublished       Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model KBDocument {
+  id          String   @id @default(uuid())
+  title       String
+  content     String
+  category    String
+  tags        String
+  sourceUrl   String?
+  isPublished Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Conversation {
+  id              String   @id @default(uuid())
+  studentId       String?
+  channel         String   @default("WEBSITE") // WEBSITE, WHATSAPP
+  externalId      String?  // e.g., WhatsApp Phone Number
+  isEscalated     Boolean  @default(false)
+  isResolved      Boolean  @default(false)
+  rating          Int?
+  feedbackComment String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  student  User?     @relation(fields: [studentId], references: [id])
+  messages Message[]
+  tickets  SupportTicket[]
+  feedback Feedback[]
+}
+
+model Message {
+  id              String   @id @default(uuid())
+  conversationId  String
+  senderType      String   // STUDENT, BOT, AGENT, SYSTEM
+  senderId        String?
+  content         String
+  confidenceScore Float?
+  helpfulness     String?  // HELPFUL, UNHELPFUL
+  internalNote    Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+}
+
+model SupportTicket {
+  id                 String    @id @default(uuid())
+  ticketNumber       String    @unique
+  title              String
+  description        String
+  category           String
+  priority           String    @default("MEDIUM") // LOW, MEDIUM, HIGH, URGENT
+  status             String    @default("OPEN")   // OPEN, ASSIGNED, IN_PROGRESS, WAITING_FOR_STUDENT, RESOLVED, CLOSED
+  departmentId       String
+  studentId          String
+  assignedAgentId    String?
+  conversationId     String?
+  responseTimeMinutes Int?
+  resolvedAt         DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  department    Department            @relation(fields: [departmentId], references: [id])
+  student       User                  @relation("StudentTickets", fields: [studentId], references: [id])
+  assignedAgent SupportAgent?         @relation("AgentTickets", fields: [assignedAgentId], references: [id])
+  conversation  Conversation?         @relation(fields: [conversationId], references: [id])
+  assignments   TicketAssignment[]
+  statusHistory TicketStatusHistory[]
+  feedback      Feedback[]
+}
+
+model TicketAssignment {
+  id         String   @id @default(uuid())
+  ticketId   String
+  agentId    String
+  assignedBy String
+  createdAt  DateTime @default(now())
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  agent  SupportAgent  @relation(fields: [agentId], references: [id], onDelete: Cascade)
+}
+
+model TicketStatusHistory {
+  id             String   @id @default(uuid())
+  ticketId       String
+  previousStatus String?
+  newStatus      String
+  changedById    String
+  note           String?
+  createdAt      DateTime @default(now())
+
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  changedBy User          @relation("UserStatusChanges", fields: [changedById], references: [id])
+}
+
+model Feedback {
+  id             String   @id @default(uuid())
+  ticketId       String?
+  conversationId String?
+  studentId      String?
+  rating         Int      // 1 to 5
+  comment        String?
+  isAnonymous    Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  ticket       SupportTicket? @relation(fields: [ticketId], references: [id])
+  conversation Conversation?  @relation(fields: [conversationId], references: [id])
+  student      User?          @relation(fields: [studentId], references: [id])
+}
+
+model NotificationRecord {
+  id          String   @id @default(uuid())
+  recipientId String
+  type        String   // TICKET_UPDATE, NEW_ASSIGNMENT, CHAT_MESSAGE
+  title       String
+  message     String
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  recipient User @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+}
+
+model IntegrationConfig {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  action    String
+  details   String
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+}
